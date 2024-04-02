@@ -329,7 +329,7 @@ ggplot(master, aes(x = Year_of_prod, y = Stars, color = total)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   scale_color_viridis_c(name = "Total Score",option='B')
 ```
-Lastly looking at the dialouges spoken by each character. we count the words and case correct /filter for our ssiz main characters.
+Lastly looking at the dialouges spoken by each character. we count the words and case correct /filter for our main characters.
 ```{r}
  tidy_text %>%
   mutate(word_count = str_count(word, "\\S+")) %>%
