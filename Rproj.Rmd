@@ -1,0 +1,358 @@
+---
+title: "FRIENDS Analysis"
+author: "Husnain Mustafa Rudraksh Tyagi"
+date: "2024-01-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Libraries
+
+Loading Required Packages 
+```{r libraries}
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(DT)
+library(png)
+library(grid)
+library(viridis)
+library(wesanderson)
+library(ggwordcloud)
+```
+
+## Loading Data
+
+Loading Data
+
+```{r data, echo=FALSE}
+df <- read.csv("/Users/husnainmustafa/Downloads/friends_quotes.csv", stringsAsFactors = FALSE, encoding = "UTF-8")
+df %>% as_tibble()
+```
+Checking avaialabe data for all seasons.
+```{r}
+df %>% group_by(season) %>% summarise(episode_number = max(episode_number))
+```
+This code tokenizes the text column, removes common stop words, filters out words that match the author's name, and then further filters out a list of specified words. Additionally, possessive "'s" is removed from the remaining words.
+```{r}
+# Tokenize the text in the 'quote' column of the dataframe 'df' and create a new column 'word' to store the tokens
+tidy_text <- df %>%
+  unnest_tokens(word, quote) %>% 
+  
+  # Remove common stop words from the tokens
+  anti_join(stop_words) %>%
+  
+  # Filter out words that are equal to the author's name in a case-insensitive manner
+  filter(!word %in% tolower(author))
+
+# Remove additional specified words from the tokens
+tidy_text <- tidy_text %>% 
+  filter(!word %in% c("uhm", "it’s", "ll", "im", "don’t", "i’m", "that’s", "ve", "that’s","you’re",
+                      "woah", "didn", "what're", "alright", "she’s", "we’re", "dont", "c'mere", "wouldn",
+                      "isn","pbs", "can’t", "je", "youre", "doesn", "007", "haven", "whoah", "whaddya", 
+                      "somethin", "yah", "uch", "i’ll","there’s", "won’t", "didn’t", "you’ll", "allright",
+                      "yeah", "hey", "uh", "gonna", "umm","um", "y'know", "ah", "ohh", "wanna", "ya", "huh", "wow",
+                      "whoa", "ooh")) %>% 
+  
+  # Remove possessive "'s" from words
+  mutate(word = str_remove_all(word, "'s"))
+
+```
+Verifying Output
+
+```{r}
+tidy_text %>% as_tibble()
+```
+Joining with the Bing sentiments
+```{r}
+tidy_bing <- tidy_text %>% inner_join(sentiments)
+```
+Same for NRC lexicon
+```{r}
+tidy_nrc<- tidy_text %>% inner_join(get_sentiments("nrc"))
+```
+Ploting the join results with the Bing sentiments
+```{r}
+tidy_bing %>% 
+  filter(author %in% c("Ross", "Monica", "Rachel", "Joey", "Chandler", "Phoebe")) %>% 
+  ggplot(aes(sentiment, fill = author), width = 18, height = 12) +
+  geom_bar(stat = "count", show.legend = FALSE, position = "dodge") +
+  geom_text(aes(label = after_stat(count)), 
+            color = 'white', 
+            stat = "count", 
+            position = position_dodge(width = 0.9), 
+            size = 3, 
+            vjust = 3) +
+  facet_wrap(author ~ .) +
+  theme_minimal() +  
+  labs(fill = "Character",
+       x = "Sentiment", y = "Frequency",
+       title = "Exploring Sentiments of FRIENDS Characters Using Bing Lexicon",
+       subtitle = "Analysis of sentiment distribution across major characters in the TV show") +
+  scale_fill_manual(values = c("Ross" = "blue", "Monica" = "green", "Rachel" = "orange", "Joey" = "purple", "Chandler" = "red", "Phoebe" = "brown")) 
+
+
+ 
+```
+Ploting for NRC Sentiments
+```{r}
+tidy_nrc %>% 
+  filter(author %in% c("Ross", "Monica", "Rachel", "Joey", "Chandler", "Phoebe")) %>% 
+  ggplot(aes(x = sentiment, fill = author)) +
+  geom_histogram(stat = "count", position = "stack") +
+  labs(fill = "Character",
+       x = "Sentiment", y = "Frequency",
+       title = "Exploring Sentiments of FRIENDS Characters Using NRC Lexicon",
+       subtitle = "Analysis of sentiment distribution across major characters in the TV show") +
+  scale_fill_viridis_d(option = "G") +
+  theme_minimal()
+```
+The dataframe is grouped by the 'season' column.
+A sequence number ('seq') is added to each row within each group using mutate(row_number()).
+The dataframe is then ungrouped.
+
+The 'quote' column is tokenized into individual words using unnest_tokens.
+Common stop words (words with low semantic value) are removed using anti_join(stop_words).
+
+Words that match the author's name (case-insensitive) are filtered out from the tokens.
+
+Sentiment analysis is performed using the Bing lexicon with get_sentiments("bing").
+The resulting sentiment data is merged with the tokenized and filtered dataframe.
+```{r}
+# Group the dataframe by 'season' and add a sequence number to each row within each group
+df %>% 
+  group_by(season) %>% 
+  mutate(seq = row_number()) %>% 
+  ungroup() %>% 
+  
+  # Tokenize the 'quote' column and create a new column 'word' to store the tokens
+  unnest_tokens(word, quote) %>% 
+  
+  # Remove common stop words from the tokens
+  anti_join(stop_words) %>% 
+  
+  # Filter out words that are equal to the author's name in a case-insensitive manner
+  filter(!word %in% tolower(author)) %>% 
+  
+  # Perform sentiment analysis using the Bing lexicon
+  inner_join(get_sentiments("bing")) %>% 
+  
+  # Count the occurrences of sentiments in each season, grouped by index groups of size 50
+  count(season, index = seq %/% 50, sentiment) %>% 
+  
+  # Reshape the data to have sentiments as columns with corresponding counts
+  spread(sentiment, n, fill = 0) %>%
+  
+  # Calculate the overall sentiment score by subtracting negative counts from positive counts
+  mutate(sentiment = positive - negative) %>% 
+  
+  # Create a ggplot for visualization
+  ggplot(aes(index, sentiment, fill = factor(season))) +
+    geom_col(show.legend = FALSE) +
+    
+    # Facet the plot by seasons with a title and adjust the layout
+    facet_wrap(paste0("Season ", season) ~ ., ncol = 2, scales = "free_x") +
+    
+    # Apply a dark theme to the plot
+    theme_dark() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      axis.title.x = element_text(size = 12),
+      axis.title.y = element_text(size = 12),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 10),
+      strip.text = element_text(size = 10),
+      panel.grid.major = element_line(color = "gray", linetype = "dashed", linewidth = 0.5),
+      panel.grid.minor = element_blank()
+    ) +
+    
+    # Provide labels and title for the plot
+    labs(x = "Index Group", y = "Sentiment Score", title = "Sentiment Distribution Across Seasons") +
+    
+    # Use discrete fill colors for each season
+    scale_fill_discrete() # Adjust the color palette if needed
+
+```
+This code performs sentiment analysis using the AFINN lexicon, calculates the total sentiment scores for each episode, and then visualizes the data using a line plot. The plot includes a horizontal line at y = 0, indicating the boundary between positive and negative sentiment. Additionally, text labels are added to highlight the 10 episodes with the lowest and highest sentiment scores
+
+```{r}
+# Perform sentiment analysis using the AFINN lexicon
+all <- tidy_text %>%
+  inner_join(get_sentiments("afinn")) %>%  # Inner join with AFINN lexicon sentiments
+  mutate(Episode = factor(paste0("S", season, "-", "E", episode_number))) %>%  # Create a new factor variable Episode
+  group_by(Episode) %>%  # Group by the Episode variable
+  summarise(total = sum(value), .groups = 'drop') %>%  # Calculate the total sentiment score for each episode
+  ungroup() %>%  # Ungroup the data
+
+  # Create a binary variable 'Neg' indicating whether the total sentiment is negative
+  mutate(Neg = if_else(total < 0, TRUE, FALSE))
+
+# Select the 10 episodes with the lowest and highest sentiment scores
+lowest_top_10 <- all %>%
+  slice_min(order_by = total, n = 10) %>%   # Select the 10 episodes with the lowest sentiment scores
+  bind_rows(all %>%  # Combine with the 10 episodes with the highest sentiment scores
+             slice_max(order_by = total, n = 10))
+
+# Create a line plot to visualize the total sentiment scores for each episode
+ggplot(all, aes(x = Episode, y = total, group = 1)) +
+  geom_line(color = "#0072B2") +  # Line plot with blue color
+  geom_hline(yintercept = 0, color = "#024D38") +  # Horizontal line at y = 0 with green color
+  theme_minimal() +  # Minimal theme for the plot
+  labs(title = "Total Sentiment Score each Episode with AFINN Lexicon",  # Plot title
+       y = "Total Sentiment Score") +  # y-axis label
+
+  # Theme adjustments for axis labels and ticks
+  theme(axis.title.y = element_text(size = 12),
+        axis.text.y = element_text(size = 10),
+        legend.position = "bottom",
+        axis.text.x = element_blank(),  # Remove x-axis labels
+        axis.ticks.x = element_blank()) +  # Remove x-axis ticks
+
+# Add text labels for the 10 episodes with the lowest and highest sentiment scores
+geom_text(data = lowest_top_10, aes(x = Episode, y = total - 15, label = Episode), angle = 45, size = 3)
+
+```
+This code generates a word cloud plot by counting word frequencies, selecting the top 35 words, arranging them in descending order, and applying a blue-to-red color scale. The resulting plot is styled with minimal theme settings.
+```{r}
+word_freq <- tidy_text %>%
+  count(word, name = "frequency") %>%
+  arrange(desc(frequency)) %>%
+  slice_max(order_by = frequency, n = 35)
+
+color_scale <- scale_color_gradient(low = "blue", high = "red")
+
+set.seed(42)
+ggplot(word_freq, aes(label = word, size = frequency,
+                      label_content = sprintf("%s<span style='font-size:7.5pt'>(%g)</span>", word, frequency))) +
+  geom_text_wordcloud_area(aes(color = frequency)) +  # Use color aesthetic for coloring
+  color_scale +
+  scale_size_area(max_size = 40) +
+  theme_minimal()
+
+```
+Performing sentiment analysis using the AFINN lexicon on a tidy text dataset. Now we calculate the cumulative sentiment scores for selected characters ("Joey," "Chandler," "Monica," "Ross," "Rachel," and "Phoebe") grouped by season. The results are visualized using a tile plot, where each tile represents the total sentiment score for a character in a particular season. The plot is colored using the Viridis color scale, and text labels display the exact sentiment scores. The x-axis has breaks for better readability, and the overall theme is kept minimal. The visualization provides insights into how the cumulative sentiment scores of characters evolve across seasons.
+
+```{r}
+# Perform sentiment analysis using AFINN lexicon, group by author and season, calculate total scores
+sentiment_scores <- tidy_text %>%
+  inner_join(get_sentiments("afinn")) %>%
+  group_by(author, season) %>%
+  summarise(total_score = sum(value)) %>% 
+  filter(author %in% c("Joey", "Chandler", "Monica", "Ross", "Rachel", "Phoebe"))
+
+# Create a tile plot to visualize cumulative sentiments of characters over seasons
+ggplot(sentiment_scores, aes(x = season, y = author, fill = total_score)) +
+  geom_tile() +
+  geom_text(aes(label = total_score), vjust = 1) + 
+  labs(title = "Cumulative Sentiments of Characters Over Seasons",
+       x = "Season",
+       y = "Author",
+       fill = "Total Score") +
+  scale_fill_viridis_c() +  # Use the Viridis color scale
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Set x-axis breaks
+  theme_minimal()  # Apply a minimal theme to the plot
+```
+This code conducts sentiment analysis on character dialogues from the show "Friends" using the AFINN lexicon. It calculates the total sentiment scores for selected characters ("Joey," "Chandler," "Monica," "Ross," "Rachel," and "Phoebe") grouped by season. The resulting data is transformed into a correlation matrix, and a lower triangular correlation plot is generated using ggcorrplot. The plot visualizes the sentiment correlation among characters over seasons, assisting in understanding how their sentiments align or diverge.
+
+```{r}
+library(ggcorrplot)
+tidy_text %>%
+  inner_join(get_sentiments("afinn")) %>%
+  group_by(author, season) %>%
+  summarise(total_score = sum(value), .groups = "drop_last") %>%  # Specify .groups argument
+  filter(author %in% c("Joey", "Chandler", "Monica", "Ross", "Rachel", "Phoebe")) %>% 
+  spread(author, total_score) %>% 
+  select(-season) %>%  # Exclude the 'season' column
+  cor(use = "complete.obs") %>% 
+  ggcorrplot(hc.order = TRUE, type = "lower", outline.col = "white") +
+  labs(title = "Sentiment Correlation of Different Characters Over Seasons")
+```
+This code analyzes the frequency of a specific term ("sandwich") in character dialogues from the show "Friends." It filters the dataset to quotes containing the specified term and focuses on selected characters ("Joey," "Chandler," "Monica," "Ross," "Rachel," and "Phoebe"). The frequency of the term is then counted for each character and season. The results are visualized using ggplot2, displaying line plots and points to illustrate the term's frequency per season for each character. The plot provides insights into how often the term "sandwich" appears in the dialogues of different characters across seasons in the show.
+```{r}
+terms_of_interest <- c("sandwich")
+
+# Filter the data for quotes containing the specified terms
+filtered_data <- df %>%
+  mutate(author = tolower(author), quote = tolower(quote)) %>%
+  filter(author %in% c("joey", "chandler", "monica", "ross", "rachel", "phoebe")) %>% 
+  filter(str_detect(quote, paste(terms_of_interest, collapse = "|", sep = "")))
+
+# Count the frequency of each term per season
+term_frequency_per_season <- filtered_data %>%
+  group_by(author, season) %>%
+  summarise(term_count = n())
+
+# Plot the results using ggplot2
+ggplot(term_frequency_per_season, aes(x = season, y = term_count, color = author)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "'Break' Frequency per Season",
+       x = "Season",
+       y = "Frequency",
+       color = "Author") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10))+
+  theme_minimal()
+```
+Reading another file to attach the ratting and director names for every episode
+```{r}
+df2 <- read.csv("/Users/husnainmustafa/Downloads/archive (5)/friends_episodes_v3.csv", stringsAsFactors = FALSE, encoding = "UTF-8")
+t2<-df2 %>% as_tibble() %>% 
+  mutate(Episode = factor(paste0("S", Season, "-", "E", Episode.Number)))
+```
+Joining the two dataframes to get a master one having information to plot this visualization.
+```{r}
+master<-tidy_text %>%
+  inner_join(get_sentiments("afinn")) %>%
+  mutate(Episode = factor(paste0("S", season, "-", "E", episode_number))) %>%
+  group_by(Episode) %>%
+  summarise(total = sum(value), .groups = 'drop') %>%
+  ungroup %>%
+  left_join(t2,by='Episode')
+
+ggplot(master,aes(x = Stars, y = total, color = as.factor(Director))) +
+  geom_point() +
+  labs(title = "Scatter Plot: Rating vs Sentiment Score",
+       x = "Rating",
+       y = "Sentiment Score") +
+  scale_color_discrete(name = "Director")
+```
+Trying to understand the same relation while using Release date
+```{r}
+ggplot(master, aes(x = Year_of_prod, y = Stars, color = total)) +
+  geom_point() +
+  labs(title = "Scatter Plot: Release Date vs Rating",
+       x = "Release Date",
+       y = "Rating") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_viridis_c(name = "Total Score",option='B')
+```
+Lastly looking at the dialouges spoken by each character. we count the words and case correct /filter for our ssiz main characters.
+```{r}
+ tidy_text %>%
+  mutate(word_count = str_count(word, "\\S+")) %>%
+  group_by(season, author) %>%
+  summarize(total_words = sum(word_count))%>%
+  mutate(author = tolower(author)) %>%  
+  filter(author %in% c("joey", "chandler", "monica", "ross", "rachel", "phoebe")) %>% 
+  group_by(season, author) %>%
+  summarize(total_words = sum(total_words)) %>%
+
+  group_by(season) %>%
+  mutate(percentage = total_words / sum(total_words) * 100) %>%
+
+  ggplot(aes(x = factor(season), y = total_words, fill = author)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage), "%")), 
+            position = position_stack(vjust = 0.5), size = 3) +  # Add percentage labels
+  labs(title = "Total Number of Words Spoken by Each Character in Every Season",
+       x = "Season", y = "Total Words") +
+  scale_y_continuous(labels = scales::comma) +  # Add commas to y-axis labels for better readability
+  scale_fill_manual(values = wes_palette("AsteroidCity2", n = 6))+
+  theme_minimal()
+```
+
+
+
